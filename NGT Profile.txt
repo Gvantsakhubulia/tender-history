@@ -1,0 +1,147 @@
+```json
+{
+  "NGT_Group_Profile": {
+    "CPV_codes": {
+      "primary": [
+        "35220000 - Equipment for maintaining public order",
+        "72261000 - Software support services",
+        "50300000 / 50310000 / 50316000 - Maintenance and repair of personal computers, office equipment, and ticket machines",
+        "48732000 - Data security software packages"
+      ],
+      "secondary": [
+        "30197641 - Thermographic paper",
+        "30200000 - Computer equipment and accessories",
+        "30237480 - Data entry devices",
+        "30160000 - Magnetic cards",
+        "42961000 - Command and control systems",
+        "31710000 / 31711200 - Electronic equipment and displays",
+        "72200000 - Software development and consulting services"
+      ]
+    },
+    "Keywords": [
+      "Queue Management Systems / რიგის მართვის სისტემა",
+      "Q-MATIC / Orchestra / Solo",
+      "Hardware Security Modules (HSM) / კრიპტოგრაფიული ტოკენი",
+      "Symantec PGP",
+      "Two-Factor Authentication / ორ ფაქტორიანი აუთენტიფიკაცია",
+      "Gemalto / Safenet Authentication Service / Thales",
+      "Sign pad / ხელმოწერის პადი",
+      "Electronic displays / ელექტრონული ტაბლო",
+      "Thermographic paper / თერმოგრაფიული ქაღალადი"
+    ],
+    "Contract_value_range": {
+      "min": "297.00 GEL",
+      "max": "5,785,230.00 GEL",
+      "notes": "Includes price-list contracts with unit costs ranging from 70 to 160 GEL for repair services."
+    },
+    "Tender_type": {
+      "goods": "Hardware provision including queue management kiosks, signature pads, HSM USB devices, smart cards, electronic displays, and consumables like thermal paper.",
+      "services": "IT services, 1-3 year technical support, software licensing renewals, system maintenance, and software implementation.",
+      "works": "System installations are generally bundled as services, with one anomaly tender listing road repair/drainage CPVs for strict authentication software in Shuakhevi."
+    },
+    "Geographic_scope": {
+      "national": "Country-wide across Georgia.",
+      "key_cities": [
+        "Tbilisi", 
+        "Batumi", 
+        "Kutaisi", 
+        "Rustavi", 
+        "Telavi", 
+        "Gori", 
+        "Mestia", 
+        "Shuakhevi"
+      ],
+      "regions_covered": [
+        "Kvemo Kartli", 
+        "Kakheti", 
+        "Mtskheta-Mtianeti", 
+        "Imereti", 
+        "Guria", 
+        "Adjara", 
+        "Shida Kartli", 
+        "Samtskhe-Javakheti", 
+        "Racha-Lechkhumi", 
+        "Samegrelo-Zemo Svaneti"
+      ]
+    },
+    "Object_specifications": {
+      "brands_and_technologies_specified": [
+        "Q-MATIC (including TP BUTTON, TP 31XX, TP 3155, and TP TOUCH compatible printers/paper)",
+        "Orchestra and Solo queue management systems",
+        "Thales / Gemalto (Safenet Authentication Service)",
+        "Symantec PGP Encryption",
+        "Hardware Security Modules (HSM)",
+        "Cryptographic Tokens"
+      ],
+      "purchase_object_descriptions": "Procurements primarily specify the exact delivery, installation, integration, and technical support of Queue Management Systems, Two-Factor Authentication software licenses, Encryption software, and HSM devices."
+    },
+    "Statistics_and_Performance": {
+      "Top_frequent_buying_entities_by_count": {
+        "State Services Development Agency": "23 tenders",
+        "Public Service Hall": "20 tenders",
+        "National Bank of Georgia": "15 tenders",
+        "Levan Samkharauli National Forensics Bureau": "14 tenders",
+        "Tbilisi State Medical University": "12 tenders"
+      },
+      "Top_buyers_by_total_money_GEL": {
+        "State Services Development Agency": "4,944,605 GEL",
+        "Public Service Hall": "1,164,901 GEL",
+        "National Bank of Georgia": "1,098,980 GEL",
+        "Revenue Service": "525,682 GEL",
+        "Social Service Agency": "360,680 GEL"
+      },
+      "Monthly_averages": {
+        "average_number_of_tenders_participated_per_month": "1.1 tenders/month",
+        "total_amount_of_money_per_month_GEL": "~78,566.81 GEL/month"
+      },
+      "Winning_Losing_statistics": {
+        "total_participated": "138",
+        "contracts_awarded_won": "123",
+        "ended_with_negative_result_lost": "10",
+        "terminated": "4",
+        "announced_pending": "1"
+      },
+      "Most_frequent_tender_objects_by_quarter": {
+        "2015_Q4": "Queue Management System",
+        "2016_Q1": "Signature Pad",
+        "2016_Q2": "IT Services / Software",
+        "2016_Q3": "Queue Management System",
+        "2016_Q4": "IT Services / Software",
+        "2017_Q1": "Thermal Paper",
+        "2017_Q2": "Queue Management System",
+        "2017_Q3": "Queue Management System",
+        "2017_Q4": "Queue Management System",
+        "2018_Q1": "Signature Pad",
+        "2018_Q2": "Thermal Paper",
+        "2018_Q3": "Queue Management System",
+        "2018_Q4": "Queue Management System",
+        "2019_Q1": "Thermal Paper",
+        "2019_Q2": "Queue Management System",
+        "2019_Q3": "Queue Management System",
+        "2019_Q4": "IT Services / Software",
+        "2020_Q1": "Signature Pad",
+        "2020_Q3": "IT Services / Software",
+        "2020_Q4": "Queue Management System",
+        "2021_Q1": "IT Services / Software",
+        "2021_Q3": "Queue Management System",
+        "2021_Q4": "Queue Management System",
+        "2022_Q3": "Queue Management System",
+        "2022_Q4": "HSM / Cryptographic Token",
+        "2023_Q1": "Queue Management System",
+        "2023_Q2": "Queue Management System",
+        "2023_Q3": "HSM / Cryptographic Token",
+        "2023_Q4": "HSM / Cryptographic Token",
+        "2024_Q1": "Queue Management System",
+        "2024_Q2": "Queue Management System",
+        "2024_Q3": "Queue Management System",
+        "2024_Q4": "Queue Management System",
+        "2025_Q1": "Queue Management System",
+        "2025_Q3": "HSM / Cryptographic Token",
+        "2025_Q4": "Queue Management System",
+        "2026_Q1": "Queue Management System (Repair/Maintenance)",
+        "2026_Q2": "2FA / Authentication"
+      }
+    }
+  }
+}
+```
