@@ -4,14 +4,20 @@ Scraper for historical tenders from tenders.procurement.gov.ge.
 Flow:
   1. Init session (get cookies).
   2. POST search with date range — no status filter, all tenders.
-  3. Paginate through all result pages.
+  3. Paginate through all result pages (resume from checkpoint if present).
   4. For each tender fetch:
        a. app_main  → basic fields (budget, status, CPV, purchaser, etc.)
        b. app_docs  → documentation sections (object name, description)
        c. app_bids  → list of companies that submitted bids
   5. Return list of tender dicts.
+
+Checkpoint:
+  After every page a checkpoint.json is written to REPORTS_DIR so that
+  a interrupted run can be resumed from where it stopped.
 """
 
+import json
+import os
 import re
 import time
 import logging
@@ -20,8 +26,12 @@ from bs4 import BeautifulSoup
 
 log = logging.getLogger(__name__)
 
-BASE_URL  = "https://tenders.procurement.gov.ge/public/"
-AJAX_URL  = BASE_URL + "library/controller.php"
+BASE_URL        = "https://tenders.procurement.gov.ge/public/"
+AJAX_URL        = BASE_URL + "library/controller.php"
+REQUEST_TIMEOUT = 60   # seconds — raised from 30; portal can be slow under load
+REPORTS_DIR     = "reports"
+CHECKPOINT_FILE = os.path.join(REPORTS_DIR, "checkpoint.json")
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -47,13 +57,48 @@ _LABEL_MAP = {
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint helpers
+# ---------------------------------------------------------------------------
+
+def save_checkpoint(page: int, date_from: str, date_to: str) -> None:
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+        json.dump({"last_page": page, "date_from": date_from, "date_to": date_to}, f)
+
+
+def _load_checkpoint(date_from: str, date_to: str) -> int:
+    """
+    Return the page to start from. If a checkpoint exists for the same
+    date range, resume from last_page + 1. Otherwise start from 1.
+    """
+    if not os.path.exists(CHECKPOINT_FILE):
+        return 1
+    try:
+        with open(CHECKPOINT_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("date_from") == date_from:
+            resume = data["last_page"] + 1
+            log.info(f"Checkpoint found — resuming from page {resume}")
+            return resume
+    except Exception:
+        pass
+    return 1
+
+
+def clear_checkpoint() -> None:
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+        log.info("Checkpoint cleared — run completed successfully.")
+
+
+# ---------------------------------------------------------------------------
 # Session
 # ---------------------------------------------------------------------------
 
 def _make_session() -> requests.Session:
     session = requests.Session()
     session.headers.update(HEADERS)
-    resp = session.get(BASE_URL + "?lang=ge", timeout=30)
+    resp = session.get(BASE_URL + "?lang=ge", timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     log.debug(f"Session initialised. Cookies: {dict(session.cookies)}")
     return session
@@ -63,22 +108,22 @@ def _make_session() -> requests.Session:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def fetch_tenders(date_from: str, date_to: str, max_pages: int = 10000) -> list[dict]:
+def fetch_tenders(date_from: str, date_to: str, max_pages: int = 10000):
     """
-    Scrape all tenders published between date_from and date_to.
+    Generator — yields one tender at a time so the caller can buffer and
+    persist in batches (e.g. every 1000 tenders).
+
+    Automatically resumes from a saved checkpoint if one exists for the
+    same date range (i.e. a previous run was interrupted).
 
     Args:
         date_from : "YYYY-MM-DD"
         date_to   : "YYYY-MM-DD"
         max_pages : safety cap
-
-    Returns:
-        List of tender dicts.
     """
-    session = _make_session()
-    all_tenders = []
+    start_page = _load_checkpoint(date_from, date_to)
+    session    = _make_session()
 
-    # Base POST payload — no status filter, date range applied
     base_payload = {
         "action":                 "search_app",
         "app_t":                  "0",
@@ -90,47 +135,50 @@ def fetch_tenders(date_from: str, date_to: str, max_pages: int = 10000) -> list[
         "org_b":                  "",
         "app_particip_status_id": "0",
         "app_donor_id":           "0",
-        "app_status":             "0",       # 0 = all statuses
+        "app_status":             "0",
         "app_agr_status":         "0",
         "app_type":               "0",
         "app_basecode":           "0",
         "app_codes":              "",
         "app_date_type":          "1",
         "app_date_from":          date_from,
-        "app_date_tlll":          date_to,   # note: field name from live capture
+        "app_date_tlll":          date_to,
         "app_amount_from":        "",
         "app_amount_to":          "",
         "app_currency":           "2",
         "app_pricelist":          "0",
     }
 
-    for page in range(1, max_pages + 1):
+    for page in range(start_page, max_pages + 1):
         log.info(f"Fetching listing page {page} ({date_from} → {date_to})...")
         payload = {**base_payload, "page": page}
 
         try:
-            resp = session.post(AJAX_URL, data=payload, timeout=30)
+            resp = session.post(AJAX_URL, data=payload, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
         except Exception as e:
             log.error(f"Listing page {page} failed: {e}")
-            break
+            save_checkpoint(page - 1, date_from, date_to)
+            return
 
         rows = _parse_listing_rows(resp.text)
         if not rows:
             log.info(f"Empty page {page} — done.")
-            break
+            clear_checkpoint()
+            return
 
+        page_count = 0
         for row in rows:
             tender = _fetch_full_tender(session, row["id"], row["key"])
             if tender:
-                all_tenders.append(tender)
+                page_count += 1
+                yield tender, page
             time.sleep(0.4)
 
-        log.info(f"  Page {page}: {len(rows)} tenders | total so far: {len(all_tenders)}")
+        log.info(f"  Page {page}: {page_count} tenders fetched")
         time.sleep(1)
 
-    log.info(f"Finished. Total tenders fetched: {len(all_tenders)}")
-    return all_tenders
+    clear_checkpoint()
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +211,7 @@ def _fetch_full_tender(session: requests.Session, tender_id: str, key: str) -> d
         main_resp = session.get(
             AJAX_URL,
             params={"action": "app_main", "app_id": tender_id, "key": key},
-            timeout=30,
+            timeout=REQUEST_TIMEOUT,
         )
         main_resp.raise_for_status()
         tender = _parse_main(main_resp.text, tender_id, key)
@@ -172,7 +220,7 @@ def _fetch_full_tender(session: requests.Session, tender_id: str, key: str) -> d
         docs_resp = session.get(
             AJAX_URL,
             params={"action": "app_docs", "app_id": tender_id, "key": key},
-            timeout=30,
+            timeout=REQUEST_TIMEOUT,
         )
         docs_resp.raise_for_status()
         object_name, object_description, file_urls = _parse_docs(docs_resp.text)
@@ -184,7 +232,7 @@ def _fetch_full_tender(session: requests.Session, tender_id: str, key: str) -> d
         bids_resp = session.get(
             AJAX_URL,
             params={"action": "app_bids", "app_id": tender_id, "key": key},
-            timeout=30,
+            timeout=REQUEST_TIMEOUT,
         )
         bids_resp.raise_for_status()
         tender["bidders"] = _parse_bids(bids_resp.text)
@@ -193,7 +241,7 @@ def _fetch_full_tender(session: requests.Session, tender_id: str, key: str) -> d
         agr_resp = session.get(
             AJAX_URL,
             params={"action": "agr_docs", "app_id": tender_id},
-            timeout=30,
+            timeout=REQUEST_TIMEOUT,
         )
         agr_resp.raise_for_status()
         tender.update(_parse_agr_docs(agr_resp.text))
@@ -303,20 +351,6 @@ def _parse_docs(html: str) -> tuple[str, str, list[str]]:
 # ---------------------------------------------------------------------------
 
 def _parse_agr_docs(html: str) -> dict:
-    """
-    Parse contract/winner information from the agr_docs endpoint.
-
-    The winner block looks like:
-        <div class="ui-state-highlight ...">
-            <span class="agrfg10">მიმდინარე ხელშეკრულება</span>
-            ...
-            <strong>შპს კარბო</strong>
-            ნომერი/თანხა: N650... / <span class="convertme">17549.01 ლარი</span>
-            ხელშეკრულება ძალაშია: 08.04.2026 - 30.06.2026
-        </div>
-
-    Note: some tenders have no contract yet — returns empty strings in that case.
-    """
     soup = BeautifulSoup(html, "lxml")
     result = {
         "contract_winner":  "",
@@ -343,24 +377,20 @@ def _parse_agr_docs(html: str) -> dict:
     if not td:
         return result
 
-    # Winner name: first <strong> inside the <td>
     strong = td.find("strong")
     if strong:
         result["contract_winner"] = strong.get_text(strip=True)
 
-    # Contract amount: span.convertme
     amount_span = td.find("span", class_="convertme")
     if amount_span:
         result["contract_amount"] = amount_span.get_text(strip=True)
 
     td_text = td.get_text(" ", strip=True)
 
-    # Contract number: text between "ნომერი/თანხა:" and "/"
     num_match = re.search(r"ნომერი/თანხა:\s*(\S+)\s*/", td_text)
     if num_match:
         result["contract_number"] = num_match.group(1).strip()
 
-    # Contract validity: "ხელშეკრულება ძალაშია: DD.MM.YYYY - DD.MM.YYYY"
     date_match = re.search(
         r"ხელშეკრულება ძალაშია:\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})",
         td_text,
@@ -377,16 +407,6 @@ def _parse_agr_docs(html: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _parse_bids(html: str) -> list[str]:
-    """
-    Parse company names from the შეთავაზებები (bids) tab.
-
-    The portal renders each bidder as:
-        <td class="activebid1">
-            <span class="color-1">Company Name</span>
-        </td>
-
-    Returns a list of company names, empty list if no bids yet.
-    """
     soup = BeautifulSoup(html, "lxml")
     companies = []
     seen: set[str] = set()
