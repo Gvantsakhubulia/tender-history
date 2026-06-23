@@ -13,8 +13,11 @@ import re
 import time
 import logging
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from datetime import date
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +91,7 @@ def _parse_geo_date_short(text: str) -> str:
 
 def _make_session() -> requests.Session:
     session = requests.Session()
+    session.verify = False
     session.headers.update(HEADERS)
     resp = session.get(BASE_URL + "/", timeout=30)
     resp.raise_for_status()

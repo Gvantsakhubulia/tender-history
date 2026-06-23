@@ -23,6 +23,7 @@ import time
 from datetime import date
 
 from scraper import fetch_tenders, save_checkpoint
+import db as dbmodule
 # from scraper_tenders_ge import fetch_tenders_ge  # tenders.ge (disabled)
 
 logging.basicConfig(
@@ -35,8 +36,9 @@ log = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-DATE_YEARS_BACK  = 2       # how many years of tenders to scrape
+DATE_YEARS_BACK  = 1       # how many years of tenders to scrape
 MAX_PAGES        = 10000   # hard page cap (server-side date filter stops earlier)
+START_PAGE       = 1000    # skip already-scraped pages (set to 1 to start from beginning)
 REPORTS_DIR      = "reports"
 NGT_PROFILE_PATH = "NGT Profile.txt"
 
@@ -147,7 +149,7 @@ def _to_row(tender: dict) -> dict:
         "object_name":        tender.get("object_name", ""),
         "object_description": tender.get("object_description", ""),
         "description":        tender.get("description", ""),
-        "bidders":            " | ".join(tender.get("bidders", [])),
+        "bidders":            " | ".join(b["name"] for b in tender.get("bidders", [])),
         "contract_winner":    tender.get("contract_winner", ""),
         "contract_number":    tender.get("contract_number", ""),
         "contract_amount":    tender.get("contract_amount", ""),
@@ -209,9 +211,54 @@ def _tender_year(tender: dict) -> str:
 
 FLUSH_EVERY = 1000  # write to CSV after this many tenders are buffered
 
+_db_conn = None  # single connection reused across flushes
+
+
+def _get_db_conn():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = dbmodule.connect()
+            log.info("DB connection established.")
+        except Exception as e:
+            log.error(f"DB connection failed — skipping DB save: {e}")
+            _db_conn = None
+    return _db_conn
+
+
+def _save_batch_to_db(tenders: list[dict]) -> None:
+    conn = _get_db_conn()
+    if conn is None:
+        return
+    saved = 0
+    try:
+        source_id = dbmodule.get_source_id(conn, "procurement_gov")
+    except Exception as e:
+        log.error(f"DB: could not get source_id: {e}")
+        return
+
+    for tender in tenders:
+        try:
+            tender_id, inserted = dbmodule.upsert_tender(conn, tender, source_id)
+            for i, cpv_str in enumerate(tender.get("cpv_codes", [])):
+                cpv_id = dbmodule.upsert_cpv_code(conn, cpv_str)
+                if cpv_id:
+                    dbmodule.insert_tender_cpv_codes(conn, tender_id, [(cpv_id, i == 0)])
+            dbmodule.insert_tender_documents(conn, tender_id, tender.get("file_urls", []))
+            if inserted:
+                dbmodule.enqueue_rescrape(conn, tender_id, str(tender.get("id", "")),
+                                          source_id, tender.get("deadline", ""))
+            conn.commit()
+            saved += 1
+        except Exception as e:
+            conn.rollback()
+            log.error(f"DB: failed to save tender {tender.get('id')}: {e}")
+
+    log.info(f"DB: {saved}/{len(tenders)} tender(s) saved.")
+
 
 def _flush(buffer: list[dict], ngt_cpvs: set, ngt_keywords: list) -> int:
-    """Write buffer to CSV files grouped by year. Returns count of NGT matches."""
+    """Write buffer to CSV files grouped by year and save to DB. Returns count of NGT matches."""
     by_year: dict[str, list[dict]] = {}
     for t in buffer:
         by_year.setdefault(_tender_year(t), []).append(t)
@@ -223,6 +270,8 @@ def _flush(buffer: list[dict], ngt_cpvs: set, ngt_keywords: list) -> int:
         _write_csv(yr_tenders, os.path.join(REPORTS_DIR, f"procurement_all_{yr}.csv"))
         if ngt_matched:
             _write_csv(ngt_matched, os.path.join(REPORTS_DIR, f"procurement_ngt_{yr}.csv"))
+
+    _save_batch_to_db(buffer)
     return matched
 
 
@@ -240,7 +289,7 @@ def run():
     total = 0
     total_matched = 0
 
-    for tender, page in fetch_tenders(date_from=date_from, date_to=date_to, max_pages=MAX_PAGES):
+    for tender, page in fetch_tenders(date_from=date_from, date_to=date_to, max_pages=MAX_PAGES, start_page=START_PAGE):
         buffer.append(tender)
         last_page = page
         if len(buffer) >= FLUSH_EVERY:
@@ -256,6 +305,18 @@ def run():
         total += len(buffer)
 
     log.info(f"Done. Total: {total} | NGT-matched: {total_matched}")
+
+    # Run description backfill after historical scraping completes (one-time only)
+    import subprocess, sys, os
+    done_flag = r"C:\Users\gvantsa.khubulia\Tender_Monitor\reports\description_backfill_done.flag"
+    if not os.path.exists(done_flag):
+        backfill = r"C:\Users\gvantsa.khubulia\Tender_Monitor\backfill_descriptions.py"
+        log.info("Starting description backfill...")
+        result = subprocess.run([sys.executable, backfill], check=False)
+        if result.returncode == 0:
+            open(done_flag, "w").close()  # create flag so it never runs again
+    else:
+        log.info("Description backfill already completed — skipping.")
 
 
 if __name__ == "__main__":
